@@ -119,6 +119,7 @@ int main(int argc, char *argv[]) {
   float b = cl_options["coeffB"].as<float>();
   uint r_seed = cl_options["rSeed"].as<uint>();
   std::cout << "Number of points : " << n_points << "\n";;
+  std::cout << "Number of threads : " << n_threads << "\n";;
   std::cout << "A : " << a << "\n" << "B : " << b << "\n";
   std::cout << "Random Seed : " << r_seed << "\n";
 
