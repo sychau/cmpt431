@@ -83,11 +83,12 @@ inline void heat_transfer_calculation(uint tid, uint size, uint start, uint end,
 			  T->ComputeNewTemp(x, y);
 		  }
 	  }	
-		if (tid == 0) {
-			T->SwapArrays();
-			T->IncrementStepCount();
-		}
-		barrier.wait();
+    barrier.wait();
+    if (tid == 0) {
+      T->SwapArrays();
+      T->IncrementStepCount();
+    }
+    barrier.wait();
 
   }  // end of current step
 	
