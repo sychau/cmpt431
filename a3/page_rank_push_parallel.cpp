@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <iostream>
 #include <stdlib.h>
+#include <thread>
 
 #ifdef USE_INT
 #define INIT_PAGE_RANK 100000
@@ -19,7 +20,42 @@ typedef int64_t PageRankType;
 typedef double PageRankType;
 #endif
 
-void pageRankSerial(Graph &g, int max_iters) {
+// Include start_index but exclude end_index
+void pageRankAlgo(
+	Graph &g, std::vector<double> &threads_time_taken, CustomBarrier& barrier, std::mutex *mutexes,
+	PageRankType *pr_curr, PageRankType *pr_next,
+	int max_iters, int thread_id, int start_index, int end_index
+) {
+	timer timer;
+	timer.start();
+
+  for (int iter = 0; iter < max_iters; iter++) {
+    // for each vertex 'u', process all its outNeighbors 'v'
+    for (uintV u = start_index; u < end_index; u++) {
+      uintE out_degree = g.vertices_[u].getOutDegree();
+      for (uintE i = 0; i < out_degree; i++) {
+        uintV v = g.vertices_[u].getOutNeighbor(i);
+        // Only one thread can read and modify pr_next[v] at a time
+        mutexes[v].lock();
+        pr_next[v] += (pr_curr[u] / (PageRankType) out_degree);
+        mutexes[v].unlock();
+      }
+    }
+    barrier.wait();
+    for (uintV v = start_index; v < end_index; v++) {
+      // v here is only used by this thread
+      pr_next[v] = PAGE_RANK(pr_next[v]);
+      // reset pr_curr for the next iteration
+      pr_curr[v] = pr_next[v];
+      pr_next[v] = 0.0;
+    }
+    barrier.wait();
+  }
+
+	threads_time_taken[thread_id] = timer.stop();
+}
+
+void pageRankParallel(Graph &g, int max_iters, int n_threads) {
   uintV n = g.n_;
 
   PageRankType *pr_curr = new PageRankType[n];
@@ -36,23 +72,40 @@ void pageRankSerial(Graph &g, int max_iters) {
   // Create threads and distribute the work across T threads
   // -------------------------------------------------------------------
   t1.start();
-  for (int iter = 0; iter < max_iters; iter++) {
-    // for each vertex 'u', process all its outNeighbors 'v'
-    for (uintV u = 0; u < n; u++) {
-      uintE out_degree = g.vertices_[u].getOutDegree();
-      for (uintE i = 0; i < out_degree; i++) {
-        uintV v = g.vertices_[u].getOutNeighbor(i);
-        pr_next[v] += (pr_curr[u] / (PageRankType) out_degree);
-      }
-    }
-    for (uintV v = 0; v < n; v++) {
-      pr_next[v] = PAGE_RANK(pr_next[v]);
 
-      // reset pr_curr for the next iteration
-      pr_curr[v] = pr_next[v];
-      pr_next[v] = 0.0;
-    }
+  std::vector<std::thread> threads;
+  std::vector<double> threads_time_taken(n_threads, 0.0);
+
+  // Calculate vertices per thread, if not divisible first thread take extra
+  unsigned long vertices_per_thread = n / n_threads;
+  unsigned long vertices_in_first_thread = vertices_per_thread + n % n_threads;
+
+  // Assign job to threads
+	CustomBarrier barrier{n_threads};
+  std::mutex* mutexes = new std::mutex[n];
+
+  threads.emplace_back(pageRankAlgo,
+		std::ref(g), std::ref(threads_time_taken), std::ref(barrier),
+		mutexes, pr_curr, pr_next,
+		max_iters, 0, 0, vertices_in_first_thread
+	);
+
+  for (int i = 1; i < n_threads; i++) {
+		int start_index = vertices_in_first_thread + (i - 1) * vertices_per_thread;
+		int end_index = vertices_in_first_thread + i * vertices_per_thread;
+
+    threads.emplace_back(pageRankAlgo,
+			std::ref(g), std::ref(threads_time_taken), std::ref(barrier),
+			mutexes, pr_curr, pr_next,
+			max_iters, i, start_index, end_index
+		);
   }
+
+  // Join threads
+  for (auto& t : threads) {
+    t.join();
+  }  
+
   time_taken = t1.stop();
   // -------------------------------------------------------------------
   std::cout << "thread_id, time_taken" << std::endl;
@@ -63,6 +116,11 @@ void pageRankSerial(Graph &g, int max_iters) {
   // 0, 0.12
   // 1, 0.12
 
+	// Let thread 0 be main thread and created thread be 1 to n_threads
+	for (int i = 0; i < n_threads; ++i) {
+		std::cout << i + 1 << ", " << std::setprecision(6) << threads_time_taken[i] << "\n";
+	}
+
   PageRankType sum_of_page_ranks = 0;
   for (uintV u = 0; u < n; u++) {
     sum_of_page_ranks += pr_curr[u];
@@ -71,6 +129,7 @@ void pageRankSerial(Graph &g, int max_iters) {
   std::cout << "Time taken (in seconds) : " << time_taken << "\n";
   delete[] pr_curr;
   delete[] pr_next;
+  delete[] mutexes;
 }
 
 int main(int argc, char *argv[]) {
@@ -107,7 +166,7 @@ int main(int argc, char *argv[]) {
   std::cout << "Reading graph\n";
   g.readGraphFromBinary<int>(input_file_path);
   std::cout << "Created graph\n";
-  pageRankSerial(g, max_iterations);
+  pageRankParallel(g, max_iterations, n_threads);
 
   return 0;
 }

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <stdlib.h>
 #include <thread>
+#include <atomic>
 
 #ifdef USE_INT
 #define INIT_PAGE_RANK 100000
@@ -11,6 +12,7 @@
 #define PAGE_RANK(x) (15000 + (5 * x) / 6)
 #define CHANGE_IN_PAGE_RANK(x, y) std::abs(x - y)
 typedef int64_t PageRankType;
+typedef std::atomic<int64_t> PageRankTypeAtomic;
 #else
 #define INIT_PAGE_RANK 1.0
 #define EPSILON 0.01
@@ -18,61 +20,69 @@ typedef int64_t PageRankType;
 #define PAGE_RANK(x) (1 - DAMPING + DAMPING * x)
 #define CHANGE_IN_PAGE_RANK(x, y) std::fabs(x - y)
 typedef double PageRankType;
+typedef std::atomic<double> PageRankTypeAtomic;
 #endif
 
 // Include start_index but exclude end_index
 void pageRankAlgo(
 	Graph &g, std::vector<double> &threads_time_taken, CustomBarrier& barrier,
-	PageRankType *pr_curr, PageRankType *pr_next,
+	PageRankTypeAtomic *pr_curr, PageRankTypeAtomic *pr_next,
 	int max_iters, int thread_id, int start_index, int end_index
 ) {
 	timer timer;
 	timer.start();
 
-	for (int iter = 0; iter < max_iters; iter++) {
-		// for each vertex 'v', process all its inNeighbors 'u'
-		for (uintV v = start_index; v < end_index; v++) {
-			uintE in_degree = g.vertices_[v].getInDegree();
-			for (uintE i = 0; i < in_degree; i++) {
-				uintV u = g.vertices_[v].getInNeighbor(i);
-				uintE u_out_degree = g.vertices_[u].getOutDegree();
-				if (u_out_degree > 0) {
-					pr_next[v] += (pr_curr[u] / (PageRankType) u_out_degree);
-				}
-			}
-		}
-		barrier.wait();
-		for (uintV v = start_index; v < end_index; v++) {
-			pr_next[v] = PAGE_RANK(pr_next[v]);
-			// reset pr_curr for the next iteration
-			pr_curr[v] = pr_next[v];
-			pr_next[v] = 0.0;
-		}
-		barrier.wait();
-	}
+  for (int iter = 0; iter < max_iters; iter++) {
+    // for each vertex 'u', process all its outNeighbors 'v'
+    for (uintV u = start_index; u < end_index; u++) {
+			// u here is only used by this thread
+      uintE out_degree = g.vertices_[u].getOutDegree();
+      for (uintE i = 0; i < out_degree; i++) {
+				// v here could be an index used by other thread in the same time
+        uintV v = g.vertices_[u].getOutNeighbor(i);
+        // Only one thread should read and modify pr_next[v] at a time
+
+  			PageRankType curr = pr_next[v].load(std::memory_order_relaxed);
+				PageRankType newWeight = pr_curr[u] / (PageRankType) out_degree;
+				while(!pr_next[v].compare_exchange_weak(curr, curr + newWeight,
+                                        	std::memory_order_release,
+                                          std::memory_order_relaxed));   
+      }
+    }
+    barrier.wait();
+    for (uintV v = start_index; v < end_index; v++) {
+			// v here is only used by this thread
+      pr_next[v] = PAGE_RANK(pr_next[v]);
+      // reset pr_curr for the next iteration
+      pr_curr[v] = pr_next[v].load();
+      pr_next[v] = 0.0;
+    }
+    barrier.wait();
+  }
+
 	threads_time_taken[thread_id] = timer.stop();
 }
 
 void pageRankParallel(Graph &g, int max_iters, int n_threads) {
   uintV n = g.n_;
 
-  PageRankType *pr_curr = new PageRankType[n];
-  PageRankType *pr_next = new PageRankType[n];
+  PageRankTypeAtomic *pr_curr = new PageRankTypeAtomic[n];
+  PageRankTypeAtomic *pr_next = new PageRankTypeAtomic[n];
 
   for (uintV i = 0; i < n; i++) {
     pr_curr[i] = INIT_PAGE_RANK;
     pr_next[i] = 0.0;
   }
 
-  // Pull based pagerank
+  // Push based pagerank
   timer t1;
   double time_taken = 0.0;
   // Create threads and distribute the work across T threads
   // -------------------------------------------------------------------
   t1.start();
 
-	std::vector<std::thread> threads;
-	std::vector<double> threads_time_taken(n_threads, 0.0);
+  std::vector<std::thread> threads;
+  std::vector<double> threads_time_taken(n_threads, 0.0);
 
   // Calculate vertices per thread, if not divisible first thread take extra
   unsigned long vertices_per_thread = n / n_threads;
@@ -82,7 +92,7 @@ void pageRankParallel(Graph &g, int max_iters, int n_threads) {
 	CustomBarrier barrier{n_threads};
 
   threads.emplace_back(pageRankAlgo,
-		std::ref(g), std::ref(threads_time_taken), std::ref(barrier), 
+		std::ref(g), std::ref(threads_time_taken), std::ref(barrier),
 		pr_curr, pr_next,
 		max_iters, 0, 0, vertices_in_first_thread
 	);
@@ -92,7 +102,7 @@ void pageRankParallel(Graph &g, int max_iters, int n_threads) {
 		int end_index = vertices_in_first_thread + i * vertices_per_thread;
 
     threads.emplace_back(pageRankAlgo,
-			std::ref(g), std::ref(threads_time_taken), std::ref(barrier), 
+			std::ref(g), std::ref(threads_time_taken), std::ref(barrier),
 			pr_curr, pr_next,
 			max_iters, i, start_index, end_index
 		);
@@ -120,7 +130,7 @@ void pageRankParallel(Graph &g, int max_iters, int n_threads) {
 
   PageRankType sum_of_page_ranks = 0;
   for (uintV u = 0; u < n; u++) {
-    sum_of_page_ranks += pr_curr[u];
+    sum_of_page_ranks += pr_curr[u].load();
   }
   std::cout << "Sum of page ranks : " << sum_of_page_ranks << "\n";
   std::cout << "Time taken (in seconds) : " << time_taken << "\n";
@@ -130,7 +140,7 @@ void pageRankParallel(Graph &g, int max_iters, int n_threads) {
 
 int main(int argc, char *argv[]) {
   cxxopts::Options options(
-      "page_rank_pull",
+      "page_rank_push",
       "Calculate page_rank using serial and parallel execution");
   options.add_options(
       "",
@@ -150,9 +160,9 @@ int main(int argc, char *argv[]) {
   std::string input_file_path = cl_options["inputFile"].as<std::string>();
 
 #ifdef USE_INT
-  std::cout << "Using INT\n";
+  std::cout << "Using INT" << std::endl;
 #else
-  std::cout << "Using DOUBLE\n";
+  std::cout << "Using DOUBLE" << std::endl;
 #endif
   std::cout << std::fixed;
   std::cout << "Number of Threads : " << n_threads << std::endl;
