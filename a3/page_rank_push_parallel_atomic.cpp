@@ -116,7 +116,6 @@ void pageRankParallel(Graph &g, int max_iters, int n_threads) {
   time_taken = t1.stop();
   // -------------------------------------------------------------------
   std::cout << "thread_id, time_taken" << std::endl;
-  std::cout << "0, " << time_taken << std::endl;
   // Print the above statistics for each thread
   // Example output for 2 threads:
   // thread_id, time_taken
@@ -125,7 +124,7 @@ void pageRankParallel(Graph &g, int max_iters, int n_threads) {
 
 	// Let thread 0 be main thread and created thread be 1 to n_threads
 	for (int i = 0; i < n_threads; ++i) {
-		std::cout << i + 1 << ", " << std::setprecision(6) << threads_time_taken[i] << "\n";
+		std::cout << i << ", " << std::setprecision(6) << threads_time_taken[i] << "\n";
 	}
 
   PageRankType sum_of_page_ranks = 0;
