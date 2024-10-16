@@ -388,7 +388,13 @@ int main(int argc, char *argv[]) {
   uint max_iterations = cl_options["nIterations"].as<uint>();
   std::string input_file_path = cl_options["inputFile"].as<std::string>();
   uint strategy = cl_options["strategy"].as<uint>();
+  if (strategy < 1 || strategy > 4) {
+    std::cout << "Strategy must be between 1 to 4\n";
+  }
   uint granularity = cl_options["granularity"].as<uint>();
+  if (granularity <= 0) {
+    std::cout << "Strategy must be positive integer\n";
+  }
 #ifdef USE_INT
   std::cout << "Using INT" << std::endl;
 #else

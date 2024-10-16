@@ -240,6 +240,7 @@ void pageRankParallel(Graph &g, int max_iters, int n_threads, int strategy, int 
     // Vertex-based decomposition and static mapping, the same strategy as your Assignment 3 programs.
     // Vertices are statically distributed among threads such that each thread performs all computations on n/T vertices.
     case 1: {
+      std::cout << "one\n";
       // Calculate vertices per thread, if not divisible first thread take extra
       unsigned long vertices_per_thread = n / n_threads;
       unsigned long vertices_in_first_thread = vertices_per_thread + n % n_threads;
@@ -376,7 +377,13 @@ int main(int argc, char *argv[]) {
   uint max_iterations = cl_options["nIterations"].as<uint>();
   std::string input_file_path = cl_options["inputFile"].as<std::string>();
   uint strategy = cl_options["strategy"].as<uint>();
+  if (strategy < 1 || strategy > 4) {
+    std::cout << "Strategy must be between 1 to 4\n";
+  }
   uint granularity = cl_options["granularity"].as<uint>();
+  if (granularity <= 0) {
+    std::cout << "Strategy must be positive integer\n";
+  }
 #ifdef USE_INT
   std::cout << "Using INT\n";
 #else
