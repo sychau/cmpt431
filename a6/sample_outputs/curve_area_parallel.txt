@@ -1,0 +1,28 @@
+mpirun -n 1 ./curve_area_serial --coeffA 3.2 --coeffB 7.1 --nPoints 1000000000 --rSeed 37
+Number of points : 1000000000
+A : 3.2
+B : 7.1
+Random Seed : 37
+rank, points_generated, curve_points, time_taken
+0, 1000000000, 299317871, 38.293
+Total points generated : 1000000000
+Total points in curve : 299317871
+Area : 1.197271484
+Time taken (in seconds) : 38.293
+
+mpirun -n 4 ./curve_area_parallel --coeffA 3.2 --coeffB 7.1 --nPoints 1000000000 --rSeed 37
+Number of processes : 4
+Number of points : 1000000000
+A : 3.2
+B : 7.1
+Random Seed : 37
+rank, points_generated, curve_points, time_taken
+0, 250000000, 74830339, 9.7203
+1, 250000000, 74827657, 9.5878
+2, 250000000, 74831320, 9.6353
+3, 250000000, 74829396, 9.6421
+Total points generated : 1000000000
+Total points in curve : 299318712
+Area : 1.197274848
+Time taken (in seconds) : 9.7225
+

@@ -1,0 +1,44 @@
+mpirun -n 1 ./heat_transfer_serial --iCX 0.1 --iCY 0.15 --tSteps 4000 --gSize 1000 --mTemp 600
+Number of processes : 1
+Grid Size : 1000x1000
+Cx : 0.1
+Cy : 0.15
+Temperature in the middle of grid : 600
+Time Steps : 4000
+Initializing Temperature Array...
+rank, start_column, end_column, time_taken
+0, 0, 999, 54.897
+Temp[0,0]=0
+Temp[166,166]=6.0966e-13
+Temp[332,332]=138.69
+Temp[498,498]=600
+Temp[664,664]=161.75
+Temp[830,830]=1.7838e-12
+Temp[999,999]=0
+Time taken (in seconds) : 54.897
+
+mpirun -n 4 ./heat_transfer_parallel --iCX 0.1 --iCY 0.15 --tSteps 4000 --gSize 1000 --mTemp 600
+Number of processes : 4
+Grid Size : 1000x1000
+Cx : 0.1
+Cy : 0.15
+Temperature in the middle of grid : 600
+Time Steps : 4000
+Initializing Temperature Array...
+rank, start_column, end_column, time_taken
+0, 0, 249, 14.512
+1, 250, 499, 14.51
+2, 500, 749, 14.508
+3, 750, 999, 14.508
+Temp[0,0]=0
+Temp[166,166]=6.0966e-13
+Temp[249,249]=0.006173
+Temp[332,332]=138.69
+Temp[498,498]=600
+Temp[499,499]=600
+Temp[664,664]=161.75
+Temp[749,749]=0.0075003
+Temp[830,830]=1.7838e-12
+Temp[999,999]=0
+Time taken (in seconds) : 14.531
+
