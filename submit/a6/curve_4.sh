@@ -4,6 +4,6 @@
 #SBATCH --nodes=4
 #SBATCH --ntasks=4
 #SBATCH --partition=slow
-#SBATCH --mem=5G
+#SBATCH --mem=2G
 
 srun ./curve_area_parallel --coeffA 1.2 --coeffB 0.8 --nPoints 4000000000 --rSeed 129
