@@ -127,8 +127,10 @@ int main(int argc, char *argv[]) {
 
 	int world_rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-
+	int world_size;
+	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 	if (world_rank == ROOT) {
+		std::cout << "Number of processes : " << world_size << "\n";
 		std::cout << "Number of points : " << n_points << "\n";
 		std::cout << "A : " << a << "\n" << "B : " << b << "\n";
 		std::cout << "Random Seed : " << r_seed << "\n";
