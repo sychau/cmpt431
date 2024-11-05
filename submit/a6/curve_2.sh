@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #SBATCH --cpus-per-task=1
-#SBATCH --nodes=1
+#SBATCH --nodes=2
 #SBATCH --ntasks=2
 #SBATCH --partition=slow
 #SBATCH --mem=10G
