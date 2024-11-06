@@ -87,60 +87,109 @@ inline double heat_transfer_calculation(uint size, uint start, uint end, Tempera
   timer t1;
   t1.start();
 
-	// Prepare arguments for Allgatherv
+	// // Prepare arguments for Allgatherv
+	// int world_size;
+	// MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  // int world_rank;
+  // MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+	// int ele_per_process = size * (end - start + 1);
+	// double* recv_buffer = static_cast<double*>(malloc(size * size * sizeof(double)));
+	// double* send_buffer = static_cast<double*>(malloc(ele_per_process * sizeof(double)));
+
+	// int* recv_counts = static_cast<int*>(malloc(ele_per_process * sizeof(int)));
+	// for (int i = 0; i < world_size; i++) {
+	// 	recv_counts[i] = ele_per_process;
+	// }
+	// int* displs = static_cast<int*>(malloc(ele_per_process * sizeof(int)));
+	// for (int i = 0; i < world_size; i++) {
+	// 	displs[i] = ele_per_process * i;
+	// }
+
+  // for (uint stepcount = 1; stepcount <= steps; stepcount ++) {
+	// 	// x: row index, y: col index
+	//   for (uint x = start; x <= end; x++) {
+	// 	  for (uint y = 0; y < size; y++) {
+	// 		  T->ComputeNewTemp(x, y);
+	// 	  }
+	//   }
+	// 	MPI_Barrier(MPI_COMM_WORLD);
+
+	// 	MPI_Allgatherv(T->GetCurrArray() + world_rank * ele_per_process, ele_per_process, MPI_DOUBLE,
+	// 			recv_buffer, recv_counts, displs, MPI_DOUBLE, MPI_COMM_WORLD);
+
+  //   MPI_Barrier(MPI_COMM_WORLD);
+
+	// 	// Swap array buffer to avoid copying
+	// 	double* temp_pointer = T->GetCurrArray();
+	// 	T->SetCurrArray(recv_buffer);
+	// 	recv_buffer = temp_pointer;
+
+  //   T->SwapArrays();
+  //   T->IncrementStepCount();
+  // }  // end of current step
+
+	// free(recv_buffer);
+	// free(recv_counts);
+	// free(displs);
+
 	int world_size;
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   int world_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-	int ele_per_process = size * (end - start + 1);
-	double* recv_buffer = static_cast<double*>(malloc(size * size * sizeof(double)));
-	double* send_buffer = static_cast<double*>(malloc(ele_per_process * sizeof(double)));
-
-	int* recv_counts = static_cast<int*>(malloc(ele_per_process * sizeof(int)));
-	for (int i = 0; i < world_size; i++) {
-		recv_counts[i] = ele_per_process;
-	}
-	int* displs = static_cast<int*>(malloc(ele_per_process * sizeof(int)));
-	for (int i = 0; i < world_size; i++) {
-		displs[i] = ele_per_process * i;
-	}
-
-  for (uint stepcount = 1; stepcount <= steps; stepcount ++) {
+	// --- synchronization: Send and Receive boundary columns from neighbors
+	// Even processes communicate with right proces first
+	// Odd  processes communicate with left process first
+	for (uint stepcount = 1; stepcount <= steps; stepcount ++) {
 		// x: row index, y: col index
 	  for (uint x = start; x <= end; x++) {
 		  for (uint y = 0; y < size; y++) {
 			  T->ComputeNewTemp(x, y);
 		  }
 	  }
+
+		// Wait till calculation in all processes finish
 		MPI_Barrier(MPI_COMM_WORLD);
 
-		MPI_Allgatherv(T->GetCurrArray() + world_rank * ele_per_process, ele_per_process, MPI_DOUBLE,
-				recv_buffer, recv_counts, displs, MPI_DOUBLE, MPI_COMM_WORLD);
+		if (world_rank % 2 == 0)  {   // even rank
+			if (world_rank < world_size - 1)  {  // not last process
+				// Send my column "end" to the right process world_rank+1
+				MPI_Send(T->GetCurrArray()+end*size, size, MPI_DOUBLE,  world_rank+1, end, MPI_COMM_WORLD);
+				// Receive column "end+1" from the right process world_rank+1, populate local Curr Array
+				MPI_Recv(T->GetCurrArray()+(end+1)*size, size, MPI_DOUBLE, world_rank+1, end+1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			}
+			if (world_rank > 0)   {  // not first process
+				// Receive column "start-1" from the left process world_rank-1, populate local Curr Array
+				MPI_Recv(T->GetCurrArray()+(start-1)*size, size, MPI_DOUBLE, world_rank-1, start-1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+				// Send my column "start" to the left process world_rank-1
+				MPI_Send(T->GetCurrArray()+start*size, size, MPI_DOUBLE, world_rank-1, start, MPI_COMM_WORLD);
+			}
+		} else {  // odd rank
+			if (world_rank > 0)   {  // not first process
+				// Receive column "start-1" from the left process world_rank-1, populate local Curr Array
+				MPI_Recv(T->GetCurrArray()+(start-1)*size, size, MPI_DOUBLE, world_rank-1, start-1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+				// Send my column "start" to the left process world_rank-1
+				MPI_Send(T->GetCurrArray()+start*size, size, MPI_DOUBLE, world_rank-1, start, MPI_COMM_WORLD);
+			}
+			if (world_rank < world_size - 1)  {  // not last process
+				// Send my column "end" to the right process world_rank+1
+				MPI_Send(T->GetCurrArray()+end*size, size, MPI_DOUBLE, world_rank+1, end, MPI_COMM_WORLD);
+				// Receive column "end+1" from the right process world_rank+1, populate local Curr Array
+				MPI_Recv(T->GetCurrArray()+(end+1)*size, size, MPI_DOUBLE, world_rank+1, end+1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			}
+		}
 
-    MPI_Barrier(MPI_COMM_WORLD);
+		// Wait till all communication across processes finish
+		MPI_Barrier(MPI_COMM_WORLD);
 
-		// Swap array buffer to avoid copying
-		double* temp_pointer = T->GetCurrArray();
-		T->SetCurrArray(recv_buffer);
-		recv_buffer = temp_pointer;
-
-    T->SwapArrays();
-    T->IncrementStepCount();
-  }  // end of current step
-
-	free(recv_buffer);
-	free(recv_counts);
-	free(displs);
+		T->SwapArrays(); // CurrArray is only partially true
+		T->IncrementStepCount();
+	}
 
 	return t1.stop();
 }
 
 void heat_transfer_calculation_parallel(uint size, TemperatureArray* T, uint steps) {
   timer overall_timer;
-  double time_taken = 0.0;
-  uint startx = 0;
-  uint endx = size - 1;
-
   overall_timer.start();
   //*------------------------------------------------------------------------
   int world_size;
@@ -150,14 +199,21 @@ void heat_transfer_calculation_parallel(uint size, TemperatureArray* T, uint ste
 
   int min_columns = size / world_size;
   int excess_columns = size % world_size;
-  if (world_rank < excess_columns) {
-    startx = world_rank * (min_columns + 1);
-    endx = startx + min_columns;
-    
-  } else {
-    startx = (excess_columns * (min_columns + 1)) + ((world_rank-excess_columns) * min_columns);
-    endx = startx + min_columns - 1;
-  }
+
+	auto getStartEnd = [min_columns, excess_columns](int world_rank) {
+			int startx, endx;
+			if (world_rank < excess_columns) {
+					startx = world_rank * (min_columns + 1);
+					endx = startx + min_columns;
+			} else {
+					startx = (excess_columns * (min_columns + 1)) + ((world_rank - excess_columns) * min_columns);
+					endx = startx + min_columns - 1;
+			}
+			return std::make_pair(startx, endx);
+	};
+	std::pair<int, int> res = getStartEnd(world_rank);
+	int startx = res.first;
+	int endx = res.second;
 
 	double local_time_taken = heat_transfer_calculation(size, startx, endx, T, steps);
 
@@ -166,6 +222,19 @@ void heat_transfer_calculation_parallel(uint size, TemperatureArray* T, uint ste
 		global_time_taken = static_cast<double*>(malloc(sizeof(double) * world_size));
 	}
 	MPI_Gather(&local_time_taken, 1, MPI_DOUBLE, global_time_taken, 1, MPI_DOUBLE, ROOT, MPI_COMM_WORLD);
+
+	// Gather all Temp Array to root process
+	if (world_rank == ROOT) {
+		for (int wr = ROOT+1; wr < world_size; wr++) {
+			std::pair<int, int> wr_res = getStartEnd(wr);
+			int wr_startx = wr_res.first;
+			int wr_endx = wr_res.second;
+			int wr_col = wr_endx - wr_startx + 1;
+    	MPI_Recv(T->GetCurrArray()+wr_startx*size, wr_col*size, MPI_DOUBLE, wr, wr, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		}
+	} else {
+		MPI_Send(T->GetCurrArray()+startx*size, (endx-startx+1)*size, MPI_DOUBLE, ROOT, world_rank, MPI_COMM_WORLD);
+	}
   //*------------------------------------------------------------------------
 	if (world_rank != ROOT) return;
 
@@ -196,9 +265,9 @@ void heat_transfer_calculation_parallel(uint size, TemperatureArray* T, uint ste
 		std::cout<< std::setprecision(TIME_PRECISION) << "Temp[" << p << "," << p << "]=" << T->temp(p, p) << "\n";
 	}
   //*------------------------------------------------------------------------
-  time_taken = overall_timer.stop();
+  double overall_time_taken = overall_timer.stop();
   std::cout << "Time taken (in seconds) : " << std::setprecision(TIME_PRECISION)
-            << time_taken << "\n";
+            << overall_time_taken << "\n";
 
 	free(global_time_taken);
 }
